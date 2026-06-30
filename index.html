@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Torn Pro Stats · 4M Goal System</title>
+
+<!-- PWA / iOS home screen -->
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="4M Tracker">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#090B10">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ============ AUTH SCREEN ============ -->
+<div id="authScreen">
+  <div class="auth-card" id="authCard"></div>
+</div>
+
+<!-- ============ APP SHELL ============ -->
+<div id="app">
+  <header class="hud">
+    <div class="hud-left">
+      <div class="hud-dot off" id="connDot"></div>
+      <div class="hud-title" id="hudTitle">4M Goal System</div>
+    </div>
+    <div class="hud-right">
+      <button class="icon-btn" id="refreshBtn" title="Atualizar">⟳</button>
+      <button class="icon-btn" id="lockBtn" title="Bloquear">🔒</button>
+    </div>
+  </header>
+  <main id="content"></main>
+  <nav class="bottom">
+    <button data-tab="dashboard" class="active"><span class="ic">📊</span>Dashboard</button>
+    <button data-tab="progress"><span class="ic">🎯</span>Progresso</button>
+    <button data-tab="cycles"><span class="ic">⚡</span>Ciclos</button>
+    <button data-tab="travel"><span class="ic">🌸</span>Viagens</button>
+    <button data-tab="history"><span class="ic">📈</span>Histórico</button>
+    <button data-tab="planner"><span class="ic">🗓️</span>Planner</button>
+  </nav>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
