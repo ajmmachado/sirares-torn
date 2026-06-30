@@ -1,6 +1,5 @@
 (function(){
 "use strict";
-
 /* =================================================================
    STORAGE KEYS
 ================================================================= */
@@ -17,7 +16,6 @@ const K = {
   session: 'tps_session' // sessionStorage
 };
 const GOAL = 4000000;
-
 /* ---- Travel optimizer reference data ---- */
 const TRAVEL_TIMES = {mex:26,cay:35,can:41,haw:134,uni:159,arg:167,swi:176,jap:225,chi:242,uae:271,sou:297};
 const COUNTRY_META = {
@@ -25,6 +23,15 @@ const COUNTRY_META = {
   haw:{name:'Hawaii',flag:'🌺'}, uni:{name:'Reino Unido',flag:'🇬🇧'}, arg:{name:'Argentina',flag:'🇦🇷'},
   swi:{name:'Suíça',flag:'🇨🇭'}, jap:{name:'Japão',flag:'🇯🇵'}, chi:{name:'China',flag:'🇨🇳'},
   uae:{name:'EAU',flag:'🇦🇪'}, sou:{name:'África do Sul',flag:'🇿🇦'}
+};
+/* Reverse lookup: destination name (from Torn API travel.destination) → country code */
+const DESTINATION_TO_CODE = {
+  'Mexico':'mex','Cayman Islands':'cay','Canada':'can','Hawaii':'haw',
+  'United Kingdom':'uni','Argentina':'arg','Switzerland':'swi','Japan':'jap',
+  'China':'chi','UAE':'uae','South Africa':'sou',
+  // also accept codes directly in case API changes
+  'mex':'mex','cay':'cay','can':'can','haw':'haw','uni':'uni',
+  'arg':'arg','swi':'swi','jap':'jap','chi':'chi','uae':'uae','sou':'sou'
 };
 const METHOD_FACTORS = {standard:1, airstrip:0.7, business:0.3, both:0.21};
 const FLOWER_NAMES = ['Dahlia','Cherry Blossom','Ceibo Flower','Crocus','Orchid','Edelweiss','Peony','African Violet','Banana Orchid','Heather','Tribulus Omanense'];
@@ -35,14 +42,12 @@ function itemEmoji(name){
   if(isFlowerItem(name)) return '🌸';
   return '📦';
 }
-
 function lsGet(k, fallback){
   try{ const v = localStorage.getItem(k); return v===null ? fallback : JSON.parse(v); }
   catch(e){ return fallback; }
 }
 function lsSet(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
 function lsDel(k){ try{ localStorage.removeItem(k); }catch(e){} }
-
 function todayStr(){
   const d = new Date();
   return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
@@ -65,7 +70,6 @@ function toast(msg){
   clearTimeout(toast._t);
   toast._t = setTimeout(()=>t.classList.remove('show'), 2200);
 }
-
 /* =================================================================
    STATE
 ================================================================= */
@@ -85,17 +89,14 @@ let state = {
   loading:false,
   lastError:null
 };
-
 /* =================================================================
    AUTH
 ================================================================= */
 const authCard = document.getElementById('authCard');
-
 function renderAuth(){
   const hasPw = !!lsGet(K.pwhash,null);
   const lockUntil = lsGet(K.lockuntil, 0);
   const now = Date.now();
-
   if(lockUntil > now){
     const secs = Math.ceil((lockUntil-now)/1000);
     authCard.innerHTML = `
@@ -111,7 +112,6 @@ function renderAuth(){
     },1000);
     return;
   }
-
   if(!hasPw){
     authCard.innerHTML = `
       <div class="logo-ring">4M</div>
@@ -136,7 +136,6 @@ function renderAuth(){
     };
     return;
   }
-
   authCard.innerHTML = `
     <div class="logo-ring">4M</div>
     <h1>Torn Pro Stats</h1>
@@ -185,14 +184,12 @@ function renderAuth(){
     document.getElementById('cancelReset').onclick = renderAuth;
   };
 }
-
 document.getElementById('lockBtn').onclick = ()=>{
   sessionStorage.removeItem(K.session);
   document.getElementById('app').classList.remove('active');
   document.getElementById('authScreen').style.display='flex';
   renderAuth();
 };
-
 /* =================================================================
    TORN API
 ================================================================= */
@@ -208,7 +205,6 @@ async function fetchTorn(apikey){
   }
   return data;
 }
-
 async function fetchYataStocks(){
   state.yata.loading = true; render();
   try{
@@ -223,7 +219,6 @@ async function fetchYataStocks(){
   }
   state.yata.loading = false; render();
 }
-
 async function fetchTornItemPrices(){
   if(!state.apikey) return;
   try{
@@ -233,12 +228,10 @@ async function fetchTornItemPrices(){
     state.tornItems = data.items || {};
   }catch(e){ /* keep previous cache silently */ }
 }
-
 async function loadTravelOptimizerData(){
   await Promise.all([fetchYataStocks(), fetchTornItemPrices()]);
   render();
 }
-
 async function refreshData(showToast){
   if(!state.apikey){ render(); return; }
   state.loading = true; render();
@@ -263,9 +256,14 @@ async function refreshData(showToast){
       life_cur: d.life ? d.life.current : null,
       life_max: d.life ? d.life.maximum : null,
       status: d.status ? d.status.description : 'Desconhecido',
+      /* travel: null when in Torn, or object when flying/abroad */
       travel: d.travel ? {
-        destination: d.travel.destination, timestamp: d.travel.timestamp,
-        timeLeft: d.travel.time_left, method: d.travel.method
+        destination: d.travel.destination,
+        timestamp: d.travel.timestamp,
+        timeLeft: d.travel.time_left,
+        method: d.travel.method,
+        /* is_abroad: true when player has already landed in a foreign country */
+        is_abroad: (d.travel.time_left === 0 && d.travel.destination && d.travel.destination.toLowerCase() !== 'torn')
       } : null
     };
     maybeSaveSnapshot(total);
@@ -280,7 +278,6 @@ async function refreshData(showToast){
   state.loading = false;
   render();
 }
-
 function maybeSaveSnapshot(total){
   const t = todayStr();
   const last = state.snapshots[state.snapshots.length-1];
@@ -294,7 +291,6 @@ function maybeSaveSnapshot(total){
   }
   lsSet(K.snapshots, state.snapshots);
 }
-
 /* =================================================================
    ANALYTICS — growth, cycles, efficiency
 ================================================================= */
@@ -307,7 +303,6 @@ function getDeltas(){
   }
   return out;
 }
-
 function avgDailyRate(){
   const s = state.snapshots;
   if(s.length < 2) return 0;
@@ -316,7 +311,6 @@ function avgDailyRate(){
   if(d<=0) return 0;
   return (window[window.length-1].total - window[0].total)/d;
 }
-
 function detectCycles(){
   const deltas = getDeltas();
   if(deltas.length === 0) return {phases:[], current:'na', avgBurst:0, avgNormal:0, consistency:0};
@@ -324,7 +318,6 @@ function detectCycles(){
   const mean = vals.reduce((a,b)=>a+b,0)/vals.length;
   const variance = vals.reduce((a,b)=>a+Math.pow(b-mean,2),0)/vals.length;
   const std = Math.sqrt(variance);
-
   const phases = deltas.map(d=>{
     let phase;
     if(std < 1e-6){ phase = d.delta>0 ? 'normal':'cooldown'; }
@@ -339,10 +332,8 @@ function detectCycles(){
   const avgBurst = bursts.length ? bursts.reduce((a,b)=>a+b,0)/bursts.length : 0;
   const avgNormal = normals.length ? normals.reduce((a,b)=>a+b,0)/normals.length : 0;
   const consistency = mean>0 ? Math.max(0, Math.min(100, 100*(1-(std/Math.max(mean,1))))) : 0;
-
   return {phases, current, avgBurst, avgNormal, consistency, mean, std};
 }
-
 function computeMetrics(){
   const total = state.player ? state.player.total : (state.snapshots.length ? state.snapshots[state.snapshots.length-1].total : 0);
   const missing = Math.max(0, GOAL-total);
@@ -354,15 +345,158 @@ function computeMetrics(){
   const cyc = detectCycles();
   return {total, missing, pct, rate, etaDays, etaDate, cyc};
 }
+/* =================================================================
+   PLANNER — Jump types & weekly schedule
+   Cycle per week:
+     Day A  → Candy Jump   (49 Lollipops + 1 Ecstasy, cooldown 24h)
+     Day B  → Natural Jump (2–3 jumps with natural energy, no items)
+     Day C  → Natural Jump (2–3 jumps with natural energy, no items)
+     Day D  → Happy Jump   (choose method below based on settings)
+   Happy Jump methods (user-configurable):
+     lollipop  → 49 Lollipops + 1 Ecstasy (cooldown 24h)   ~$89k
+     choco1    → 49 Big Choco + 1 Xanax + 1 Ecstasy        ~$1.4M
+     choco4    → 49 Big Choco + 4 Xanax + 1 Ecstasy + 25pts ~$5.1M
+     edvd5     → 4 Xanax + 5 EDVD + 1 Ecstasy + 25pts      ~$21M
+     edvd5_an  → same but working at 10* AN shop (double happy)
+================================================================= */
+const JUMP_METHODS = {
+  lollipop: {
+    label:'Lollipop Jump',
+    cost: 89000,
+    items: ['49× Lollipop','1× Ecstasy'],
+    happy: 1225,
+    cooldown: '24h',
+    steps:[
+      'Compra 49 Lollipops + 1 Ecstasy.',
+      'Aguarda energia cheia (100 / 150 donator).',
+      'Espera que o relógio passe um dos incrementos de 15 min.',
+      'Consome 49 Lollipops (+1225 Happy).',
+      'Usa Ecstasy (duplica Happy atual).',
+      'Treina no ginásio até esgotar energia.'
+    ],
+    note:'Repete a cada 24h quando o cooldown de booster terminar.'
+  },
+  choco1: {
+    label:'Big Choco Jump (1 Xanax)',
+    cost: 1400000,
+    items: ['49× Big Box of Chocolate Bars','1× Xanax','1× Ecstasy'],
+    happy: 1715,
+    cooldown: '6–8h drug + 24h booster',
+    steps:[
+      'Compra todos os itens.',
+      'Aguarda energia cheia.',
+      'Usa 1 Xanax e espera o Drug Cooldown terminar (6–8h).',
+      'Espera que o relógio passe um dos incrementos de 15 min.',
+      'Consome 49 Big Chocolates (+1715 Happy).',
+      'Usa Ecstasy (duplica Happy).',
+      'Treina no ginásio até esgotar energia.'
+    ],
+    note:'Pode ser feito diariamente.'
+  },
+  choco4: {
+    label:'Big Choco Jump (4 Xanax)',
+    cost: 5100000,
+    items: ['49× Big Box of Chocolate Bars','4× Xanax','1× Ecstasy','25 Points (opcional, refill)'],
+    happy: 1715,
+    cooldown: '6–8h × 4 drug cooldowns',
+    steps:[
+      'Compra todos os itens.',
+      'Usa 1 Xanax, aguarda cooldown (6–8h). Repete mais 3 vezes até 1000 energia.',
+      'Aguarda que todos os Drug Cooldowns terminem.',
+      'Espera que o relógio passe um dos incrementos de 15 min.',
+      'Consome 49 Big Chocolates (+1715 Happy).',
+      'Usa Ecstasy (duplica Happy).',
+      'Treina no ginásio até esgotar energia.',
+      'Vai ao Points Building e faz refill (25 pts).',
+      'Treina novamente com a energia do refill.'
+    ],
+    note:'Pode ser feito dia sim dia não. O refill de 25 pts é opcional mas maximiza o Happy.'
+  },
+  edvd5: {
+    label:'5× EDVD Jump',
+    cost: 21000000,
+    items: ['4× Xanax','5× Erotic DVD','1× Ecstasy','25 Points (refill)'],
+    happy: 12500,
+    cooldown: '6–8h × 4 drug cooldowns',
+    steps:[
+      'Compra todos os itens.',
+      'Usa 1 Xanax, aguarda cooldown (6–8h). Repete mais 3 vezes até 1000 energia.',
+      'Aguarda que todos os Drug Cooldowns terminem.',
+      'Espera que o relógio passe um dos incrementos de 15 min.',
+      'Consome 5 Erotic DVDs (+12 500 Happy).',
+      'Usa Ecstasy (duplica Happy → 25 000).',
+      'Treina no ginásio até esgotar energia.',
+      'Vai ao Points Building e faz refill (25 pts).',
+      'Treina novamente com a energia do refill.'
+    ],
+    note:'Cada EDVD pode ser comprado no Job (20 pts cada, ganhas 5 pts/dia → 4 EDVDs a cada 16 dias).'
+  },
+  edvd5_an: {
+    label:'5× EDVD Jump (10★ AN)',
+    cost: 21000000,
+    items: ['4× Xanax','5× Erotic DVD','1× Ecstasy','25 Points (refill)','Trabalho: 10★ Adult Novelties'],
+    happy: 25000,
+    cooldown: '6–8h × 4 drug cooldowns',
+    steps:[
+      'Certifica-te de que estás a trabalhar numa 10★ Adult Novelties (duplica ganhos de EDVD).',
+      'Compra todos os itens.',
+      'Usa 1 Xanax, aguarda cooldown (6–8h). Repete mais 3 vezes até 1000 energia.',
+      'Aguarda que todos os Drug Cooldowns terminem.',
+      'Espera que o relógio passe um dos incrementos de 15 min.',
+      'Consome 5 Erotic DVDs (+25 000 Happy com bónus 10★ AN).',
+      'Usa Ecstasy (duplica Happy → 50 000).',
+      'Treina no ginásio até esgotar energia.',
+      'Vai ao Points Building e faz refill (25 pts).',
+      'Treina novamente com a energia do refill.'
+    ],
+    note:'Com 10★ AN os ganhos de EDVD duplicam (25 000 Happy antes de Ecstasy). Máximo retorno por jump.'
+  }
+};
+
+const CANDY_JUMP_INFO = {
+  label: 'Candy Jump',
+  cost: 89000,
+  items: ['49× Lollipop','1× Ecstasy'],
+  happy: 1225,
+  cooldown: '24h booster cooldown',
+  steps:[
+    'Compra 49 Lollipops + 1 Ecstasy.',
+    'Aguarda energia cheia (100 / 150 donator).',
+    'Espera que o relógio passe um dos incrementos de 15 min.',
+    'Consome 49 Lollipops (+1225 Happy).',
+    'Usa Ecstasy (duplica Happy atual).',
+    'Treina no ginásio até esgotar energia.'
+  ],
+  note:'Cooldown de 24h após usar os boosters. Abre a semana — faz primeiro para ativar o cooldown.'
+};
+
+/* EDVD point tracker helpers */
+function edvdPointStatus(){
+  const anchor = state.settings.edvdsAnchor;
+  if(!anchor) return null;
+  const today = todayStr();
+  let diff = daysBetween(anchor, today);
+  if(diff < 0) diff = 0;
+  // 5 pts/day, need 20 pts per EDVD, 5 EDVDs → 100 pts → 20 days for 5 (but we only need 4+spare)
+  // cycle of 16 days → 80 pts → 4 EDVDs
+  const cyclePos = diff % 16;
+  const ptsAccum = cyclePos * 5;
+  const edvdsReady = Math.floor(ptsAccum / 20);
+  const daysUntilNext4 = Math.max(0, 16 - cyclePos);
+  const nextCycleDate = new Date();
+  nextCycleDate.setDate(nextCycleDate.getDate() + daysUntilNext4);
+  return {
+    cycleDay: cyclePos + 1,
+    ptsToday: ptsAccum,
+    edvdsReady,
+    daysUntilFull: daysUntilNext4,
+    nextCycleDateStr: nextCycleDate.toLocaleDateString('pt-PT',{day:'2-digit',month:'short'})
+  };
+}
 
 /* =================================================================
-   EDVDS / XANAX CYCLE (4-day job cycle)
-   Day 0 (80 pts day)  -> Happy Jump Grande: 4x Xanax + 4x EDVDS + 1x Ecstasy
-   Days 1-3 (off days) -> Mini Jump: Candy + 1-2x Xanax + treino com energia natural (150)
+   EDVDS / XANAX old helper (kept for dashboard compat)
 ================================================================= */
-const BIG_JUMP_RECIPE = '4x Xanax + 4x EDVDS + 1x Ecstasy';
-const MINI_JUMP_RECIPE = 'Candy + 1-2x Xanax + treino com energia natural (150)';
-
 function edvdsStatus(){
   const anchor = state.settings.edvdsAnchor;
   if(!anchor) return null;
@@ -373,12 +507,13 @@ function edvdsStatus(){
   const daysUntilNext = (4 - cyclePos) % 4;
   const nextDate = new Date(); nextDate.setDate(nextDate.getDate()+daysUntilNext);
   const isTodayThe80 = daysUntilNext===0;
+  const lead = state.settings.stackLead || 1;
   return {
-    daysUntilNext,
+    daysUntilNext, lead,
     nextDateStr: nextDate.toLocaleDateString('pt-PT',{day:'2-digit',month:'short'}),
     isTodayThe80,
-    todayType: isTodayThe80 ? 'big' : 'mini',
-    todayRecipe: isTodayThe80 ? BIG_JUMP_RECIPE : MINI_JUMP_RECIPE
+    shouldStackNow: daysUntilNext <= lead && !isTodayThe80,
+    todayType: isTodayThe80 ? 'big' : 'mini'
   };
 }
 
@@ -400,9 +535,13 @@ function travelSummary(){
     days: dates.length
   };
 }
-
 /* =================================================================
    TRAVEL OPTIMIZER ENGINE
+   FIX: correctly handles the case where the player is already abroad.
+   - If timeLeft > 0  → still flying; plan starts when they land.
+   - If timeLeft == 0 AND destination != 'Torn' → player is abroad;
+     the first leg must be a RETURN flight (from current country to Torn),
+     then continue scheduling from Torn as origin.
 ================================================================= */
 function buildTravelCandidates(){
   if(!state.yata.stocks) return [];
@@ -410,12 +549,10 @@ function buildTravelCandidates(){
   const factor = METHOD_FACTORS[ts.method] || 0.7;
   const tax = (ts.marketTaxPct||0)/100;
   const candidates = [];
-
   Object.keys(state.yata.stocks).forEach(code=>{
     const meta = COUNTRY_META[code]; if(!meta) return;
     const countryData = state.yata.stocks[code];
     const rawItems = (countryData.stocks||[]).filter(it=>it.quantity>0);
-
     const pool = [];
     rawItems.forEach(it=>{
       const isF = isFlowerItem(it.name), isP = isPlushieItem(it.name);
@@ -428,11 +565,9 @@ function buildTravelCandidates(){
       pool.push({id:it.id, name:it.name, cost:it.cost, sell, profitPerUnit, quantity:it.quantity, type:isF?'flower':'plushie'});
     });
     if(pool.length===0) return;
-
     let remainingCash = ts.cashLimit>0 ? ts.cashLimit : Infinity;
     const chosen = []; let filledTotal=0, cashUsed=0;
-
-    function take(list, cap, label){
+    function take(list, cap){
       list.sort((a,b)=>b.profitPerUnit-a.profitPerUnit);
       let filled=0;
       for(const it of list){
@@ -450,7 +585,6 @@ function buildTravelCandidates(){
     if(ts.extraFlowerCap>0) take(pool.filter(p=>p.type==='flower'), ts.extraFlowerCap);
     if(ts.extraPlushieCap>0) take(pool.filter(p=>p.type==='plushie'), ts.extraPlushieCap);
     take(pool, ts.totalCap);
-
     if(chosen.length===0) return;
     const tripProfit = chosen.reduce((s,i)=>s+i.take*i.profitPerUnit,0);
     const oneWay = TRAVEL_TIMES[code]*factor;
@@ -462,21 +596,45 @@ function buildTravelCandidates(){
       stockUpdate: countryData.update
     });
   });
-
   candidates.sort((a,b)=>b.profitPerHour-a.profitPerHour);
   return candidates;
 }
 
 function scheduleTravelPlan(){
   const candidates = buildTravelCandidates();
-  if(candidates.length===0) return {schedule:[], totalProfit:0, totalCash:0, flights:0, profitPerHour:0, candidates};
-
+  if(candidates.length===0) return {schedule:[], totalProfit:0, totalCash:0, flights:0, profitPerHour:0, candidates, returnLeg:null};
   const ts = state.travelSettings;
+  const factor = METHOD_FACTORS[ts.method] || 0.7;
   const now = new Date();
   let cursor = new Date(now);
-  if(state.player && state.player.travel && state.player.travel.timeLeft>0){
-    cursor = new Date(now.getTime() + state.player.travel.timeLeft*1000);
+
+  // ── Determine current player location ──────────────────────────
+  const p = state.player;
+  const travelInfo = p && p.travel;
+  let returnLeg = null; // populated when player is currently abroad
+
+  if(travelInfo){
+    if(travelInfo.timeLeft > 0){
+      // Still in the air → plan starts after landing
+      cursor = new Date(now.getTime() + travelInfo.timeLeft * 1000);
+    } else if(travelInfo.is_abroad){
+      // Already landed abroad → first "leg" is the return flight home
+      const destCode = DESTINATION_TO_CODE[travelInfo.destination] || null;
+      const returnMin = destCode ? Math.round(TRAVEL_TIMES[destCode] * factor + 1) : 30;
+      const returnArrival = new Date(now.getTime() + returnMin * 60 * 1000);
+      returnLeg = {
+        type: 'return',
+        flag: destCode ? (COUNTRY_META[destCode]||{}).flag || '✈️' : '✈️',
+        destination: travelInfo.destination,
+        depart: new Date(now),
+        arrive: returnArrival,
+        returnMin
+      };
+      cursor = returnArrival;
+    }
+    // else: timeLeft==0 and destination is Torn → player is home, cursor = now (default)
   }
+
   const [endH,endM] = (ts.windowEnd||'23:00').split(':').map(Number);
   let endTime = new Date(now); endTime.setHours(endH,endM,0,0);
   if(endTime <= cursor) endTime.setDate(endTime.getDate()+1);
@@ -498,9 +656,10 @@ function scheduleTravelPlan(){
     used.add(pick.code);
     totalProfit += pick.tripProfit; totalCash += pick.cashRequired; flights++;
   }
+
   const awaySeconds = flights ? (schedule[schedule.length-1].back - now)/1000 : 0;
   const profitPerHour = awaySeconds>0 ? totalProfit/(awaySeconds/3600) : 0;
-  return {schedule, totalProfit, totalCash, flights, profitPerHour, awaySeconds, candidates};
+  return {schedule, totalProfit, totalCash, flights, profitPerHour, awaySeconds, candidates, returnLeg};
 }
 
 function energyNerveWaste(awaySeconds){
@@ -522,8 +681,6 @@ function energyNerveWaste(awaySeconds){
   });
   return warnings;
 }
-
-
 /* =================================================================
    RENDER — TAB ROUTER
 ================================================================= */
@@ -538,7 +695,6 @@ function setTab(tab){
 document.querySelectorAll('nav.bottom button').forEach(b=>{
   b.addEventListener('click', ()=> setTab(b.dataset.tab));
 });
-
 function render(){
   const c = document.getElementById('content');
   if(!state.apikey){ c.innerHTML = renderApiKeySetup(); attachApiKeyHandlers(); return; }
@@ -552,7 +708,6 @@ function render(){
   }
   attachTabHandlers();
 }
-
 /* ---------- API KEY SETUP VIEW ---------- */
 function renderApiKeySetup(){
   return `
@@ -590,13 +745,11 @@ function attachApiKeyHandlers(){
     }
   };
 }
-
 /* ---------- DASHBOARD ---------- */
 function renderDashboard(){
   const m = computeMetrics();
   const p = state.player;
   const edv = edvdsStatus();
-
   let insights = [];
   if(state.lastError){
     insights.push({ic:'⚠️', tx:`<b>Erro de ligação:</b> ${state.lastError}`});
@@ -620,10 +773,8 @@ function renderDashboard(){
   if(p && p.energy_cur!==null && p.energy_max!==null && p.energy_cur >= p.energy_max*0.8){
     insights.push({ic:'🔋', tx:`Energia em <b>${p.energy_cur}/${p.energy_max}</b> — boa altura para gastar em treino.`});
   }
-
   return `
   ${!p ? `<div class="card"><div class="empty"><div class="ic">📡</div>A obter dados da Torn API...<br><button class="btn btn-primary btn-sm" style="width:auto;margin-top:14px;" id="dashRefresh">Atualizar agora</button></div></div>` : ''}
-
   ${p ? `
   <div class="card">
     <div class="card-h"><h3>${p.name} · Nível ${p.level}</h3><span class="tag ${m.cyc.current}">${cyclabel(m.cyc.current)}</span></div>
@@ -633,19 +784,16 @@ function renderDashboard(){
       <span>${m.pct.toFixed(2)}% até 4M</span><span>Faltam ${fmtN(m.missing)}</span>
     </div>
   </div>
-
   <div class="grid2">
     <div class="stat-box"><div class="lbl">Crescimento / dia</div><div class="val sm">${m.rate>0?'+'+fmtN(m.rate):'—'}</div></div>
     <div class="stat-box"><div class="lbl">ETA aos 4M</div><div class="val sm">${m.etaDate || '—'}</div></div>
     <div class="stat-box"><div class="lbl">Energia</div><div class="val sm">${p.energy_cur ?? '—'}/${p.energy_max ?? '—'}</div></div>
     <div class="stat-box"><div class="lbl">Eficiência</div><div class="val sm">${m.cyc.consistency.toFixed(0)}%</div></div>
   </div>
-
   <div class="card" style="margin-top:14px;">
     <div class="card-h"><h3>Insights Automáticos</h3></div>
     ${insights.map(i=>`<div class="insight-row"><div class="insight-ic">${i.ic}</div><div class="insight-tx">${i.tx}</div></div>`).join('')}
   </div>
-
   <div class="card">
     <div class="card-h"><h3>Estado do Jogador</h3></div>
     <div class="grid3">
@@ -660,7 +808,6 @@ function renderDashboard(){
   `;
 }
 function cyclabel(c){ return {normal:'Normal',burst:'Burst',cooldown:'Cooldown',na:'Sem dados'}[c]||c; }
-
 /* ---------- PROGRESS ---------- */
 function renderProgress(){
   const m = computeMetrics();
@@ -673,7 +820,6 @@ function renderProgress(){
   ] : [];
   const circumference = 2*Math.PI*70;
   const dash = circumference * (1 - m.pct/100);
-
   return `
   <div class="card">
     <div class="card-h"><h3>Progresso até 4,000,000</h3></div>
@@ -694,7 +840,6 @@ function renderProgress(){
       <div class="stat-box"><div class="lbl">Em Falta</div><div class="val">${fmtN(m.missing)}</div></div>
     </div>
   </div>
-
   ${p ? `
   <div class="card">
     <div class="card-h"><h3>Distribuição por Stat</h3></div>
@@ -709,7 +854,6 @@ function renderProgress(){
       </div>`;
     }).join('')}
   </div>` : ''}
-
   <div class="card">
     <div class="card-h"><h3>Estimativa Temporal</h3></div>
     <div class="list-row"><div class="l1">Ritmo médio diário</div><div class="right l1">${m.rate>0?'+'+fmtN(m.rate)+'/dia':'sem dados'}</div></div>
@@ -718,13 +862,11 @@ function renderProgress(){
   </div>
   `;
 }
-
 /* ---------- CYCLES ---------- */
 function renderCycles(){
   const m = computeMetrics();
   const cyc = m.cyc;
   const recent = cyc.phases.slice(-10).reverse();
-
   return `
   <div class="card">
     <div class="card-h"><h3>Fase Atual</h3><span class="tag ${cyc.current}">${cyclabel(cyc.current)}</span></div>
@@ -735,14 +877,12 @@ function renderCycles(){
         'Ainda sem dados suficientes para classificar a fase (precisas de pelo menos 2 dias de histórico).'}
     </p>
   </div>
-
   <div class="grid2">
     <div class="stat-box"><div class="lbl">Ganho médio / Burst</div><div class="val sm">+${fmtN(cyc.avgBurst)}</div></div>
     <div class="stat-box"><div class="lbl">Ganho médio / Normal</div><div class="val sm">+${fmtN(cyc.avgNormal)}</div></div>
     <div class="stat-box"><div class="lbl">Stats / dia (geral)</div><div class="val sm">${m.rate>0?'+'+fmtN(m.rate):'—'}</div></div>
     <div class="stat-box"><div class="lbl">Eficiência geral</div><div class="val sm">${cyc.consistency.toFixed(0)}%</div></div>
   </div>
-
   <div class="card">
     <div class="card-h"><h3>Linha Temporal de Ciclos</h3></div>
     ${recent.length===0 ? `<div class="empty"><div class="ic">⚡</div>Sem ciclos detetados ainda.</div>` :
@@ -754,7 +894,6 @@ function renderCycles(){
   </div>
   `;
 }
-
 /* ---------- TRAVEL (optimizer + plushies/flowers log) ---------- */
 function renderTravel(){
   return `
@@ -765,17 +904,15 @@ function renderTravel(){
   ${state.travelSubTab==='optimizer' ? renderTravelOptimizer() : renderTravelLog()}
   `;
 }
-
 function renderTravelOptimizer(){
   const ts = state.travelSettings;
   const p = state.player;
-
   if(!state.yata.stocks && !state.yata.loading){
     return `
     <div class="card">
       <div class="card-h"><h3>Otimizador de Viagens</h3></div>
       <p style="font-size:13px;color:var(--text-dim);line-height:1.6;margin-top:0;">
-        Calcula automaticamente a rota de viagens mais lucrativa do dia, evitando desperdício de energia/nervo, com base em stocks ao vivo do estrangeiro (dados comunitários <b>YATA</b>, já que a API oficial do Torn não expõe stocks estrangeiros) e no preço de mercado atual de cada item (API oficial do Torn).
+        Calcula automaticamente a rota de viagens mais lucrativa do dia, evitando desperdício de energia/nervo, com base em stocks ao vivo do estrangeiro (dados comunitários <b>YATA</b>) e no preço de mercado atual de cada item (API oficial do Torn).
       </p>
       <button class="btn btn-primary" id="loadOptBtn">Carregar Stocks ao Vivo</button>
     </div>`;
@@ -787,17 +924,28 @@ function renderTravelOptimizer(){
     return `<div class="card"><div class="alert-box warn">⚠️ <div>${state.yata.error}</div></div>
       <button class="btn btn-ghost btn-sm" id="loadOptBtn" style="margin-top:10px;">Tentar novamente</button></div>`;
   }
-
   const plan = scheduleTravelPlan();
   const waste = energyNerveWaste(plan.awaySeconds);
-  const travelBanner = (p && p.travel && p.travel.timeLeft>0) ?
-    `<div class="alert-box info" style="margin-bottom:14px;">🛫 <div>Estás atualmente em viagem (destino: <b>${p.travel.destination}</b>). O plano começa a contar a partir da tua chegada.</div></div>` : '';
+
+  /* ── Location banner (replaces the old single banner) ── */
+  let locationBanner = '';
+  if(p && p.travel){
+    if(p.travel.timeLeft > 0){
+      locationBanner = `<div class="alert-box info" style="margin-bottom:14px;">🛫 <div>Em voo para <b>${p.travel.destination}</b>. O plano começa a partir da tua chegada.</div></div>`;
+    } else if(p.travel.is_abroad){
+      const destCode = DESTINATION_TO_CODE[p.travel.destination] || null;
+      const meta = destCode ? COUNTRY_META[destCode] : null;
+      const flag = meta ? meta.flag : '✈️';
+      const returnMin = plan.returnLeg ? plan.returnLeg.returnMin : '?';
+      locationBanner = `<div class="alert-box warn" style="margin-bottom:14px;">${flag} <div>Estás no estrangeiro (<b>${p.travel.destination}</b>). O plano inclui primeiro o voo de regresso a Torn (~${returnMin} min) e depois as próximas viagens a partir de casa.</div></div>`;
+    }
+  }
 
   return `
-  ${travelBanner}
+  ${locationBanner}
   <div class="card">
     <div class="card-h"><h3>Plano de Viagem Ótimo</h3>
-      <span style="font-size:10px;color:var(--text-faint);">stocks atualizados há ${Math.max(0,Math.round((Date.now()/1000-state.yata.timestamp)/60))} min</span>
+      <span style="font-size:10px;color:var(--text-faint);">stocks há ${Math.max(0,Math.round((Date.now()/1000-state.yata.timestamp)/60))} min</span>
     </div>
     <div class="grid2">
       <div class="stat-box"><div class="lbl">Lucro</div><div class="val" style="color:var(--good);">$${fmtN(plan.totalProfit)}</div></div>
@@ -806,11 +954,20 @@ function renderTravelOptimizer(){
       <div class="stat-box"><div class="lbl">Voos</div><div class="val sm">${plan.flights}</div></div>
     </div>
   </div>
-
   ${waste.length ? `<div class="alert-box warn" style="margin-bottom:14px;">⚠️ <div>${waste.join('<br>')}</div></div>` : ''}
-
   <div class="card">
     <div class="card-h"><h3>Linha Temporal</h3></div>
+    ${plan.returnLeg ? `
+      <div class="list-row" style="opacity:0.65;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:22px;">${plan.returnLeg.flag}</span>
+          <div>
+            <div class="l1">Regresso a Torn</div>
+            <div class="l2">parte ${fmtTime(plan.returnLeg.depart)} · chega ${fmtTime(plan.returnLeg.arrive)}</div>
+          </div>
+        </div>
+        <div class="right"><span style="font-size:11px;color:var(--text-faint);">regresso</span></div>
+      </div>` : ''}
     ${plan.schedule.length===0 ? `<div class="empty"><div class="ic">✈️</div>Sem viagens lucrativas encontradas para a tua janela de tempo / definições atuais.</div>` :
       plan.schedule.map(leg=>`
       <div class="list-row">
@@ -825,7 +982,6 @@ function renderTravelOptimizer(){
         <div class="right"><span class="delta-up">+$${fmtN(leg.tripProfit)}</span><div class="l2">$${fmtN(leg.profitPerHour)}/h</div></div>
       </div>`).join('')}
   </div>
-
   <div class="card">
     <div class="card-h"><h3>Definições do Otimizador</h3></div>
     <div class="field"><label>Método de viagem</label>
@@ -853,18 +1009,15 @@ function renderTravelOptimizer(){
       <button class="btn btn-ghost btn-sm" id="loadOptBtn" style="flex:1;">Atualizar Stocks</button>
     </div>
     <p style="font-size:11px;color:var(--text-faint);margin-top:12px;line-height:1.5;">
-      Stocks estrangeiros vêm de uma base de dados comunitária (YATA) e podem ter alguns minutos de atraso — não é dado em tempo real garantido pela Torn. O preço de venda usa o valor médio de mercado da API oficial do Torn.
+      Stocks estrangeiros vêm da base de dados comunitária YATA e podem ter alguns minutos de atraso. O preço de venda usa o valor médio de mercado da API oficial do Torn.
     </p>
   </div>
   `;
 }
-
 function fmtTime(d){ return d.toLocaleTimeString('pt-PT',{hour:'2-digit',minute:'2-digit'}); }
-
 function renderTravelLog(){
   const sum = travelSummary();
   const sorted = state.travel.slice().sort((a,b)=> b.date.localeCompare(a.date));
-
   return `
   <div class="card">
     <div class="card-h"><h3>Lucro com Viagens</h3></div>
@@ -875,7 +1028,6 @@ function renderTravelLog(){
       <div class="stat-box"><div class="lbl">Lucro médio / dia (geral)</div><div class="val sm">$${fmtN(sum.perCalendarDay)}</div></div>
     </div>
   </div>
-
   <div class="card">
     <div class="card-h"><h3>Adicionar Compra</h3></div>
     <div class="grid2">
@@ -891,7 +1043,6 @@ function renderTravelLog(){
     <div class="field"><label>Preço de venda / unidade ($)</label><input type="number" id="trSell" min="0" value="0" inputmode="decimal"></div>
     <button class="btn btn-primary" id="addTravelBtn">Guardar Compra</button>
   </div>
-
   <div class="card">
     <div class="card-h"><h3>Registo</h3></div>
     ${sorted.length===0 ? `<div class="empty"><div class="ic">🌷</div>Ainda sem compras registadas.</div>` :
@@ -906,7 +1057,6 @@ function renderTravelLog(){
   </div>
   `;
 }
-
 /* ---------- HISTORY ---------- */
 function renderHistory(){
   const s = state.snapshots.slice().reverse();
@@ -952,73 +1102,151 @@ function buildLineChart(snaps){
     ${pts.map(p=>`<circle cx="${p[0]}" cy="${p[1]}" r="2.4" fill="#0B0F16" stroke="#C6FF3D" stroke-width="1.6"/>`).join('')}
   </svg>`;
 }
-
-/* ---------- PLANNER ---------- */
+/* =================================================================
+   PLANNER — renderPlanner + buildWeekPlan (completely rewritten)
+================================================================= */
 const DAY_NAMES = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+
 function renderPlanner(){
-  const cyc = computeMetrics().cyc;
   const edv = edvdsStatus();
-  const plan = buildWeekPlan(cyc, edv);
+  const edvdPts = edvdPointStatus();
+  const happyMethod = state.settings.happyMethod || 'edvd5';
+  const hm = JUMP_METHODS[happyMethod];
+  const weekPlan = buildWeekPlan(edv, happyMethod);
 
   return `
+  <!-- ── EDVD Point Cycle ── -->
   <div class="card">
-    <div class="card-h"><h3>Ciclo de 80 Pts (EDVDS) &amp; Xanax</h3></div>
-    <div class="field"><label>Última data com 80 pts</label><input type="date" id="edvAnchor" value="${state.settings.edvdsAnchor || ''}"></div>
-    <div class="field"><label>Antecedência do stack (dias)</label>
-      <select id="edvLead">
-        ${[0,1,2].map(n=>`<option value="${n}" ${state.settings.stackLead===n?'selected':''}>${n} dia${n!==1?'s':''} antes</option>`).join('')}
-      </select>
+    <div class="card-h"><h3>📅 Ciclo de Pontos (EDVDs)</h3></div>
+    <div class="field"><label>Data de início do ciclo de 80 pts</label>
+      <input type="date" id="edvAnchor" value="${state.settings.edvdsAnchor || ''}">
     </div>
     <div class="fab-row">
       <button class="btn btn-primary btn-sm" id="saveEdvBtn" style="flex:1;">Guardar</button>
-      <button class="btn btn-ghost btn-sm" id="markTodayBtn" style="flex:1;">Marcar hoje = dia dos 80</button>
+      <button class="btn btn-ghost btn-sm" id="markTodayBtn" style="flex:1;">Hoje = início do ciclo</button>
     </div>
-    ${edv ? `
+    ${edvdPts ? `
       <div class="hairline"></div>
-      <div class="alert-box ${edv.shouldStackNow?'warn':'info'}" style="margin-top:4px;">
-        <span>${edv.shouldStackNow?'💊':'🗓️'}</span>
-        <div>${edv.isTodayThe80 ? '<b>Hoje é o dia dos 80 pts!</b>' :
-          `Faltam <b>${edv.daysUntilNext}</b> dia(s) para o próximo dia dos 80 pts (${edv.nextDateStr}).`}
-          ${edv.shouldStackNow && !edv.isTodayThe80 ? ' Começa já o stack de Xanax para o happy jump calhar nesse dia.' : ''}
-        </div>
-      </div>` : `<p style="font-size:12px;color:var(--text-faint);margin-top:10px;">Define a última data em que tiveste 80 pts no job para ativar o lembrete automático a cada 4 dias.</p>`}
+      <div class="grid2" style="margin-top:6px;">
+        <div class="stat-box"><div class="lbl">Dia do ciclo</div><div class="val sm">${edvdPts.cycleDay} / 16</div></div>
+        <div class="stat-box"><div class="lbl">Pts acumulados</div><div class="val sm">${edvdPts.ptsToday} pts</div></div>
+        <div class="stat-box"><div class="lbl">EDVDs disponíveis</div><div class="val sm">${edvdPts.edvdsReady} / 4</div></div>
+        <div class="stat-box"><div class="lbl">Próximo ciclo completo</div><div class="val sm">${edvdPts.daysUntilFull === 0 ? 'Hoje!' : `em ${edvdPts.daysUntilFull}d (${edvdPts.nextCycleDateStr})`}</div></div>
+      </div>
+      <p style="font-size:11px;color:var(--text-faint);margin-top:8px;line-height:1.5;">
+        5 pts/dia no job · 20 pts por EDVD · 80 pts = 4 EDVDs a cada 16 dias.
+      </p>` :
+      `<p style="font-size:12px;color:var(--text-faint);margin-top:10px;">Define o início do ciclo para ver quantos EDVDs tens disponíveis.</p>`}
   </div>
 
+  <!-- ── Happy Jump method selector ── -->
   <div class="card">
-    <div class="card-h"><h3>Planner Semanal Sugerido</h3></div>
-    ${plan.map(d=>`
-      <div class="day-pill">
-        <div><div class="dname">${d.day}</div><div class="ddate">${d.dateStr}</div></div>
-        <span class="tag ${d.phase}">${d.label}</span>
-      </div>
-    `).join('')}
+    <div class="card-h"><h3>💊 Método de Happy Jump</h3></div>
+    <div class="field"><label>Escolhe o teu método</label>
+      <select id="happyMethodSel">
+        ${Object.entries(JUMP_METHODS).map(([k,v])=>`<option value="${k}" ${happyMethod===k?'selected':''}>${v.label} (~$${fmtN(v.cost)})</option>`).join('')}
+      </select>
+    </div>
+    <button class="btn btn-ghost btn-sm" id="saveHappyMethodBtn" style="margin-top:4px;">Confirmar método</button>
+    ${hm ? `
+    <div class="hairline"></div>
+    <div style="margin-top:8px;">
+      <div style="font-size:12px;color:var(--text-dim);margin-bottom:6px;font-weight:600;">Itens necessários</div>
+      ${hm.items.map(i=>`<div class="list-row" style="padding:4px 0;"><span style="color:var(--text);">• ${i}</span></div>`).join('')}
+      <div style="font-size:11px;color:var(--text-faint);margin-top:6px;">Happy: <b>+${fmtN(hm.happy)}</b> (×2 com Ecstasy) · Cooldown: ${hm.cooldown}</div>
+      ${hm.note ? `<div style="font-size:11px;color:var(--text-faint);margin-top:4px;">ℹ️ ${hm.note}</div>` : ''}
+    </div>` : ''}
+  </div>
+
+  <!-- ── Weekly Plan ── -->
+  <div class="card">
+    <div class="card-h"><h3>📋 Planner Semanal</h3></div>
+    <p style="font-size:12px;color:var(--text-faint);margin:0 0 10px;">
+      Ordem: <b>Candy Jump → Treinos Naturais → Happy Jump</b>
+    </p>
+    ${weekPlan.map(d => renderDayPill(d)).join('')}
     <p style="font-size:11px;color:var(--text-faint);margin-top:10px;line-height:1.5;">
-      Sugestão gerada automaticamente com base no teu padrão histórico de ciclos e no calendário dos 80 pts. Ajusta conforme energia, nervo e disponibilidade reais.
+      O Candy Jump abre a semana para activar o cooldown de 24h cedo. Os treinos naturais aproveitam a energia que regenera. O Happy Jump fecha o ciclo quando o booster cooldown do Candy já terminou.
     </p>
   </div>
   `;
 }
-function buildWeekPlan(cyc, edv){
+
+function renderDayPill(d){
+  const isToday = d.isToday;
+  const border = isToday ? 'border:1.5px solid var(--accent);' : '';
+  let detail = '';
+  if(d.type === 'candy'){
+    detail = `<div class="l2" style="margin-top:3px;">🍬 49× Lollipop + 1× Ecstasy · Cooldown 24h</div>`;
+  } else if(d.type === 'natural'){
+    detail = `<div class="l2" style="margin-top:3px;">⚡ 2–3 treinos com energia natural (sem itens)</div>`;
+  } else if(d.type === 'happy'){
+    const hm = JUMP_METHODS[d.method] || JUMP_METHODS['edvd5'];
+    detail = `<div class="l2" style="margin-top:3px;">🎯 ${hm.label} · ~$${fmtN(hm.cost)}</div>`;
+  }
+  return `
+  <div class="day-pill" style="${border}">
+    <div style="flex:1;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <div>
+          <div class="dname">${d.day}${isToday ? ' <span style="color:var(--accent);font-size:10px;">● HOJE</span>' : ''}</div>
+          <div class="ddate">${d.dateStr}</div>
+        </div>
+      </div>
+      ${detail}
+    </div>
+    <span class="tag ${d.phase}">${d.label}</span>
+  </div>`;
+}
+
+/*
+  buildWeekPlan — 7-day rolling plan with the 3-phase sequence:
+    Phase 1 (Day 0): Candy Jump
+    Phase 2 (Days 1–2): Natural training jumps (2–3 sessions with natural energy)
+    Phase 3 (Day 3): Happy Jump (chosen method)
+  This 4-day cycle repeats.
+  We align the cycle to the EDVD anchor if set, otherwise start Candy Jump today.
+*/
+function buildWeekPlan(edv, happyMethod){
   const out = [];
-  for(let i=0;i<7;i++){
+  // Determine where in the 4-day cycle we are today
+  let cycleOffset = 0;
+  if(edv){
+    // edv.daysUntilNext = 0 means today is the "80 pts" (Happy Jump) day
+    // Map that to phase 3 (index 3 in cycle)
+    // Candy = 0, Natural1 = 1, Natural2 = 2, Happy = 3
+    const daysUntil = edv.daysUntilNext;
+    // If today is Happy day (daysUntil===0), cycleOffset = 3
+    // If tomorrow is Happy (daysUntil===1), today = Natural2 → cycleOffset = 2
+    // etc.
+    cycleOffset = (4 - (3 - (daysUntil === 0 ? 3 : (3 - daysUntil)))) % 4;
+    // Simpler: today's cyclePos = (3 - daysUntilNext + 4) % 4
+    cycleOffset = ((3 - (daysUntil % 4)) + 4) % 4;
+  }
+
+  for(let i=0; i<7; i++){
     const d = new Date(); d.setDate(d.getDate()+i);
     const dayName = DAY_NAMES[d.getDay()];
     const dateStr = d.toLocaleDateString('pt-PT',{day:'2-digit',month:'short'});
-    let phase = 'normal', label='Treino Normal';
+    const isToday = i===0;
+    const cyclePos = (cycleOffset + i) % 4;
 
-    if(edv){
-      const diff = i - (edv.daysUntilNext);
-      const mod = ((diff % 4)+4)%4;
-      if(mod===0){ phase='burst'; label='Burst — Dia dos 80 pts'; }
-      else if(mod===4-edv.lead || (edv.lead>0 && mod===4-edv.lead)){ phase='burst'; label='Stack de Xanax'; }
-      else if(mod===1){ phase='cooldown'; label='Cooldown'; }
-      else { phase='normal'; label='Treino Normal'; }
-    } else if(cyc.phases.length){
-      const seq = ['normal','normal','burst','cooldown'];
-      phase = seq[i%seq.length];
-      label = phase==='burst'?'Provável Burst':phase==='cooldown'?'Cooldown':'Treino Normal';
+    let type, phase, label;
+    switch(cyclePos){
+      case 0:
+        type='candy'; phase='burst'; label='Candy Jump';
+        break;
+      case 1:
+        type='natural'; phase='normal'; label='Treino Natural';
+        break;
+      case 2:
+        type='natural'; phase='normal'; label='Treino Natural';
+        break;
+      case 3:
+        type='happy'; phase='burst'; label='Happy Jump';
+        break;
     }
-    out.push({day:dayName, dateStr, phase, label});
+    out.push({day:dayName, dateStr, isToday, type, phase, label, method:happyMethod});
   }
   return out;
 }
@@ -1029,17 +1257,13 @@ function buildWeekPlan(cyc, edv){
 function attachTabHandlers(){
   const refreshBtn = document.getElementById('refreshBtn');
   if(refreshBtn) refreshBtn.onclick = ()=> refreshData(true);
-
   const dashRefresh = document.getElementById('dashRefresh');
   if(dashRefresh) dashRefresh.onclick = ()=> refreshData(true);
-
   document.querySelectorAll('[data-subtab]').forEach(el=>{
     el.onclick = ()=>{ state.travelSubTab = el.dataset.subtab; render(); };
   });
-
   const loadOptBtn = document.getElementById('loadOptBtn');
   if(loadOptBtn) loadOptBtn.onclick = ()=> loadTravelOptimizerData();
-
   const saveOptBtn = document.getElementById('saveOptBtn');
   if(saveOptBtn){
     saveOptBtn.onclick = ()=>{
@@ -1057,7 +1281,6 @@ function attachTabHandlers(){
       render();
     };
   }
-
   const addTravelBtn = document.getElementById('addTravelBtn');
   if(addTravelBtn){
     addTravelBtn.onclick = ()=>{
@@ -1081,14 +1304,12 @@ function attachTabHandlers(){
       render();
     };
   });
-
   const saveEdvBtn = document.getElementById('saveEdvBtn');
   if(saveEdvBtn){
     saveEdvBtn.onclick = ()=>{
       state.settings.edvdsAnchor = document.getElementById('edvAnchor').value || null;
-      state.settings.stackLead = parseInt(document.getElementById('edvLead').value,10);
       lsSet(K.settings, state.settings);
-      toast('Definições guardadas ✓');
+      toast('Ciclo guardado ✓');
       render();
     };
   }
@@ -1097,12 +1318,20 @@ function attachTabHandlers(){
     markTodayBtn.onclick = ()=>{
       state.settings.edvdsAnchor = todayStr();
       lsSet(K.settings, state.settings);
-      toast('Hoje marcado como dia dos 80 pts ✓');
+      toast('Hoje marcado como início do ciclo ✓');
+      render();
+    };
+  }
+  const saveHappyMethodBtn = document.getElementById('saveHappyMethodBtn');
+  if(saveHappyMethodBtn){
+    saveHappyMethodBtn.onclick = ()=>{
+      state.settings.happyMethod = document.getElementById('happyMethodSel').value;
+      lsSet(K.settings, state.settings);
+      toast('Método guardado ✓');
       render();
     };
   }
 }
-
 /* =================================================================
    BOOT
 ================================================================= */
@@ -1112,7 +1341,6 @@ function bootApp(){
   render();
   if(state.apikey) refreshData(false);
 }
-
 document.addEventListener('DOMContentLoaded', ()=>{
   if(sessionStorage.getItem(K.session)==='1' && lsGet(K.pwhash,null)){
     bootApp();
@@ -1121,7 +1349,6 @@ document.addEventListener('DOMContentLoaded', ()=>{
   }
 });
 })();
-
 /* =================================================================
    SERVICE WORKER REGISTRATION (offline app shell, PWA install)
 ================================================================= */
