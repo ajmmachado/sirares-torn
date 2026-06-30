@@ -356,8 +356,13 @@ function computeMetrics(){
 }
 
 /* =================================================================
-   EDVDS / XANAX STACK REMINDER (4-day job cycle)
+   EDVDS / XANAX CYCLE (4-day job cycle)
+   Day 0 (80 pts day)  -> Happy Jump Grande: 4x Xanax + 4x EDVDS + 1x Ecstasy
+   Days 1-3 (off days) -> Mini Jump: Candy + 1-2x Xanax + treino com energia natural (150)
 ================================================================= */
+const BIG_JUMP_RECIPE = '4x Xanax + 4x EDVDS + 1x Ecstasy';
+const MINI_JUMP_RECIPE = 'Candy + 1-2x Xanax + treino com energia natural (150)';
+
 function edvdsStatus(){
   const anchor = state.settings.edvdsAnchor;
   if(!anchor) return null;
@@ -366,14 +371,14 @@ function edvdsStatus(){
   if(diff < 0) diff = 0;
   const cyclePos = diff % 4;
   const daysUntilNext = (4 - cyclePos) % 4;
-  const lead = state.settings.stackLead ?? 1;
   const nextDate = new Date(); nextDate.setDate(nextDate.getDate()+daysUntilNext);
+  const isTodayThe80 = daysUntilNext===0;
   return {
     daysUntilNext,
     nextDateStr: nextDate.toLocaleDateString('pt-PT',{day:'2-digit',month:'short'}),
-    isTodayThe80: daysUntilNext===0,
-    shouldStackNow: daysUntilNext<=lead,
-    lead
+    isTodayThe80,
+    todayType: isTodayThe80 ? 'big' : 'mini',
+    todayRecipe: isTodayThe80 ? BIG_JUMP_RECIPE : MINI_JUMP_RECIPE
   };
 }
 
