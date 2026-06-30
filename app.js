@@ -346,18 +346,19 @@ function computeMetrics(){
   return {total, missing, pct, rate, etaDays, etaDate, cyc};
 }
 /* =================================================================
-   PLANNER — Jump types & weekly schedule
-   Cycle per week:
-     Day A  → Candy Jump   (49 Lollipops + 1 Ecstasy, cooldown 24h)
-     Day B  → Natural Jump (2–3 jumps with natural energy, no items)
-     Day C  → Natural Jump (2–3 jumps with natural energy, no items)
-     Day D  → Happy Jump   (choose method below based on settings)
-   Happy Jump methods (user-configurable):
-     lollipop  → 49 Lollipops + 1 Ecstasy (cooldown 24h)   ~$89k
-     choco1    → 49 Big Choco + 1 Xanax + 1 Ecstasy        ~$1.4M
-     choco4    → 49 Big Choco + 4 Xanax + 1 Ecstasy + 25pts ~$5.1M
-     edvd5     → 4 Xanax + 5 EDVD + 1 Ecstasy + 25pts      ~$21M
-     edvd5_an  → same but working at 10* AN shop (double happy)
+   PLANNER — Jump types & 16-day EDVD cycle
+   ------------------------------------------------------------------
+   Estratégia escolhida pelo utilizador (objetivo: 0€ gasto em EDVDs,
+   usando apenas os EDVDs ganhos gratuitamente pela company job):
+
+     Dias 1–14  → Choco Jump diário (49 Big Choco + 1 Xanax + 1 Ecstasy)
+     Dia 15     → Dia de Stack: usar Xanax em sequência (cooldown 6h
+                  entre cada) para acumular energia para o jump grande,
+                  SEM gastar em EDVDs (esses já foram acumulados pela
+                  company ao longo do ciclo de pontos: 5 pts/dia × 16
+                  dias = 80 pts = 4 EDVDs grátis).
+     Dia 16     → Happy Jump com os 4-5 EDVDs grátis (Erotic DVD) +
+                  Ecstasy. Ciclo reinicia no dia seguinte.
 ================================================================= */
 const JUMP_METHODS = {
   lollipop: {
@@ -415,7 +416,8 @@ const JUMP_METHODS = {
   edvd5: {
     label:'5× EDVD Jump',
     cost: 21000000,
-    items: ['4× Xanax','5× Erotic DVD','1× Ecstasy','25 Points (refill)'],
+    cashCostNoEdvd: 2805000,
+    items: ['4× Xanax','5× Erotic DVD (grátis, da company)','1× Ecstasy','25 Points (refill)'],
     happy: 12500,
     cooldown: '6–8h × 4 drug cooldowns',
     steps:[
@@ -429,12 +431,13 @@ const JUMP_METHODS = {
       'Vai ao Points Building e faz refill (25 pts).',
       'Treina novamente com a energia do refill.'
     ],
-    note:'Cada EDVD pode ser comprado no Job (20 pts cada, ganhas 5 pts/dia → 4 EDVDs a cada 16 dias).'
+    note:'Cada EDVD pode ser comprado no Job (20 pts cada, ganhas 5 pts/dia → 4 EDVDs a cada 16 dias). Usando os EDVDs grátis da company, o custo real é apenas Xanax + Ecstasy (~$2.8M) em vez de ~$21M.'
   },
   edvd5_an: {
     label:'5× EDVD Jump (10★ AN)',
     cost: 21000000,
-    items: ['4× Xanax','5× Erotic DVD','1× Ecstasy','25 Points (refill)','Trabalho: 10★ Adult Novelties'],
+    cashCostNoEdvd: 2805000,
+    items: ['4× Xanax','5× Erotic DVD (grátis, da company)','1× Ecstasy','25 Points (refill)','Trabalho: 10★ Adult Novelties'],
     happy: 25000,
     cooldown: '6–8h × 4 drug cooldowns',
     steps:[
@@ -449,7 +452,7 @@ const JUMP_METHODS = {
       'Vai ao Points Building e faz refill (25 pts).',
       'Treina novamente com a energia do refill.'
     ],
-    note:'Com 10★ AN os ganhos de EDVD duplicam (25 000 Happy antes de Ecstasy). Máximo retorno por jump.'
+    note:'Com 10★ AN os ganhos de EDVD duplicam (25 000 Happy antes de Ecstasy). Usando os EDVDs grátis da company, custo real ~$2.8M em vez de ~$21M.'
   }
 };
 
@@ -470,7 +473,10 @@ const CANDY_JUMP_INFO = {
   note:'Cooldown de 24h após usar os boosters. Abre a semana — faz primeiro para ativar o cooldown.'
 };
 
-/* EDVD point tracker helpers */
+/* Custo do dia de Stack (4× Xanax, sem EDVDs — esses são grátis) */
+const STACK_DAY_COST = 2800000; // ~4× Xanax a ~700k cada
+
+/* EDVD point tracker helpers — ciclo de 16 dias = 80 pts = 4 EDVDs grátis */
 function edvdPointStatus(){
   const anchor = state.settings.edvdsAnchor;
   if(!anchor) return null;
@@ -1103,16 +1109,27 @@ function buildLineChart(snaps){
   </svg>`;
 }
 /* =================================================================
-   PLANNER — renderPlanner + buildWeekPlan (completely rewritten)
+   PLANNER — renderPlanner + buildWeekPlan
+   ------------------------------------------------------------------
+   Ciclo de 16 dias, alinhado com o ciclo de pontos da company (5 pts/dia):
+     Dias 1–14 → Choco Jump diário (1× Xanax cada)
+     Dia 15    → Dia de Stack: 4× Xanax em sequência (cooldown 6h entre
+                 cada), a preparar a energia para o jump grande do dia
+                 seguinte. Não compra EDVDs — esses já estão acumulados.
+     Dia 16    → Happy Jump com os EDVDs grátis ganhos pela company
+                 (4-5× Erotic DVD) + Ecstasy. O ciclo reinicia no dia 1.
 ================================================================= */
 const DAY_NAMES = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+const PLANNER_CYCLE_DAYS = 16;
+const PLANNER_HORIZON_DAYS = 16; // mostra o ciclo completo, não apenas 7 dias
 
 function renderPlanner(){
   const edv = edvdsStatus();
   const edvdPts = edvdPointStatus();
   const happyMethod = state.settings.happyMethod || 'edvd5';
   const hm = JUMP_METHODS[happyMethod];
-  const weekPlan = buildWeekPlan(edv, happyMethod);
+  const choco = JUMP_METHODS.choco1;
+  const weekPlan = buildWeekPlan(edvdPts, happyMethod);
 
   return `
   <!-- ── EDVD Point Cycle ── -->
@@ -1134,9 +1151,34 @@ function renderPlanner(){
         <div class="stat-box"><div class="lbl">Próximo ciclo completo</div><div class="val sm">${edvdPts.daysUntilFull === 0 ? 'Hoje!' : `em ${edvdPts.daysUntilFull}d (${edvdPts.nextCycleDateStr})`}</div></div>
       </div>
       <p style="font-size:11px;color:var(--text-faint);margin-top:8px;line-height:1.5;">
-        5 pts/dia no job · 20 pts por EDVD · 80 pts = 4 EDVDs a cada 16 dias.
+        5 pts/dia no job · 20 pts por EDVD · 80 pts = 4 EDVDs a cada 16 dias. Estes EDVDs são <b>grátis</b> — não precisas de os comprar no mercado.
       </p>` :
-      `<p style="font-size:12px;color:var(--text-faint);margin-top:10px;">Define o início do ciclo para ver quantos EDVDs tens disponíveis.</p>`}
+      `<p style="font-size:12px;color:var(--text-faint);margin-top:10px;">Define o início do ciclo para ver quantos EDVDs tens disponíveis e alinhar o planner abaixo.</p>`}
+  </div>
+
+  <!-- ── Custos de referência ── -->
+  <div class="card">
+    <div class="card-h"><h3>💰 Custos do Ciclo</h3></div>
+    <div class="list-row">
+      <div><div class="l1">🍫 Choco Jump (diário)</div><div class="l2">49× Big Choco + 1× Xanax + 1× Ecstasy</div></div>
+      <div class="right l1">$${fmtN(choco.cost)}</div>
+    </div>
+    <div class="list-row">
+      <div><div class="l1">💊 Dia de Stack (dia 15)</div><div class="l2">4× Xanax (cooldown 6h entre cada)</div></div>
+      <div class="right l1">$${fmtN(STACK_DAY_COST)}</div>
+    </div>
+    <div class="list-row">
+      <div><div class="l1">🎯 Happy Jump — EDVD (dia 16)</div><div class="l2">4× Xanax + 5× EDVD <b style="color:var(--good);">grátis</b> + Ecstasy</div></div>
+      <div class="right l1">$${fmtN(hm.cashCostNoEdvd || hm.cost)}</div>
+    </div>
+    <div class="hairline"></div>
+    <div class="list-row">
+      <div class="l1" style="font-weight:700;">Total estimado / ciclo de 16 dias</div>
+      <div class="right l1" style="font-weight:700;color:var(--good);">$${fmtN(choco.cost*14 + STACK_DAY_COST + (hm.cashCostNoEdvd || hm.cost))}</div>
+    </div>
+    <p style="font-size:11px;color:var(--text-faint);margin-top:8px;line-height:1.5;">
+      Os 5 EDVDs do dia 16 vêm grátis da company (ciclo de pontos acima) — por isso o custo do Happy Jump não inclui a compra de EDVDs no mercado (~$21M poupados por ciclo).
+    </p>
   </div>
 
   <!-- ── Happy Jump method selector ── -->
@@ -1144,7 +1186,7 @@ function renderPlanner(){
     <div class="card-h"><h3>💊 Método de Happy Jump</h3></div>
     <div class="field"><label>Escolhe o teu método</label>
       <select id="happyMethodSel">
-        ${Object.entries(JUMP_METHODS).map(([k,v])=>`<option value="${k}" ${happyMethod===k?'selected':''}>${v.label} (~$${fmtN(v.cost)})</option>`).join('')}
+        ${Object.entries(JUMP_METHODS).map(([k,v])=>`<option value="${k}" ${happyMethod===k?'selected':''}>${v.label} (~$${fmtN(v.cashCostNoEdvd || v.cost)})</option>`).join('')}
       </select>
     </div>
     <button class="btn btn-ghost btn-sm" id="saveHappyMethodBtn" style="margin-top:4px;">Confirmar método</button>
@@ -1158,15 +1200,17 @@ function renderPlanner(){
     </div>` : ''}
   </div>
 
-  <!-- ── Weekly Plan ── -->
+  <!-- ── Cycle Plan ── -->
   <div class="card">
-    <div class="card-h"><h3>📋 Planner Semanal</h3></div>
+    <div class="card-h"><h3>📋 Planner do Ciclo (16 dias)</h3></div>
     <p style="font-size:12px;color:var(--text-faint);margin:0 0 10px;">
-      Ordem: <b>Candy Jump → Treinos Naturais → Happy Jump</b>
+      Ordem: <b>Choco Jump (dias 1–14) → Dia de Stack (dia 15) → Happy Jump c/ EDVD grátis (dia 16)</b>
     </p>
     ${weekPlan.map(d => renderDayPill(d)).join('')}
     <p style="font-size:11px;color:var(--text-faint);margin-top:10px;line-height:1.5;">
-      O Candy Jump abre a semana para activar o cooldown de 24h cedo. Os treinos naturais aproveitam a energia que regenera. O Happy Jump fecha o ciclo quando o booster cooldown do Candy já terminou.
+      Todos os dias 1–14 fazes um Choco Jump com 1 Xanax. No dia 15 fazes stack de 4 Xanax (uma a cada ~6h) para teres
+      energia pronta. No dia 16 usas os EDVDs grátis acumulados pela company para o Happy Jump grande — sem gastar
+      dinheiro extra em EDVDs. O ciclo reinicia no dia seguinte.
     </p>
   </div>
   `;
@@ -1176,20 +1220,22 @@ function renderDayPill(d){
   const isToday = d.isToday;
   const border = isToday ? 'border:1.5px solid var(--accent);' : '';
   let detail = '';
-  if(d.type === 'candy'){
-    detail = `<div class="l2" style="margin-top:3px;">🍬 49× Lollipop + 1× Ecstasy · Cooldown 24h</div>`;
-  } else if(d.type === 'natural'){
-    detail = `<div class="l2" style="margin-top:3px;">⚡ 2–3 treinos com energia natural (sem itens)</div>`;
+  if(d.type === 'choco'){
+    const choco = JUMP_METHODS.choco1;
+    detail = `<div class="l2" style="margin-top:3px;">🍫 49× Big Choco + 1× Xanax + 1× Ecstasy · $${fmtN(choco.cost)}</div>`;
+  } else if(d.type === 'stack'){
+    detail = `<div class="l2" style="margin-top:3px;">💊 4× Xanax (cooldown 6h entre cada) · $${fmtN(STACK_DAY_COST)} · sem EDVDs ainda</div>`;
   } else if(d.type === 'happy'){
     const hm = JUMP_METHODS[d.method] || JUMP_METHODS['edvd5'];
-    detail = `<div class="l2" style="margin-top:3px;">🎯 ${hm.label} · ~$${fmtN(hm.cost)}</div>`;
+    const cost = hm.cashCostNoEdvd || hm.cost;
+    detail = `<div class="l2" style="margin-top:3px;">🎯 ${hm.label} · EDVDs grátis (company) · $${fmtN(cost)}</div>`;
   }
   return `
   <div class="day-pill" style="${border}">
     <div style="flex:1;">
       <div style="display:flex;align-items:center;gap:8px;">
         <div>
-          <div class="dname">${d.day}${isToday ? ' <span style="color:var(--accent);font-size:10px;">● HOJE</span>' : ''}</div>
+          <div class="dname">${d.day} <span style="color:var(--text-faint);font-size:10px;">· dia ${d.cycleDay}/16</span>${isToday ? ' <span style="color:var(--accent);font-size:10px;">● HOJE</span>' : ''}</div>
           <div class="ddate">${d.dateStr}</div>
         </div>
       </div>
@@ -1200,53 +1246,39 @@ function renderDayPill(d){
 }
 
 /*
-  buildWeekPlan — 7-day rolling plan with the 3-phase sequence:
-    Phase 1 (Day 0): Candy Jump
-    Phase 2 (Days 1–2): Natural training jumps (2–3 sessions with natural energy)
-    Phase 3 (Day 3): Happy Jump (chosen method)
-  This 4-day cycle repeats.
-  We align the cycle to the EDVD anchor if set, otherwise start Candy Jump today.
+  buildWeekPlan — gera um plano de N dias (default: ciclo completo de 16
+  dias) seguindo a estratégia "0€ em EDVDs":
+    Dias 1–14 (cycleDay)  → Choco Jump diário
+    Dia 15                → Dia de Stack (4× Xanax, cooldown 6h)
+    Dia 16                → Happy Jump com EDVDs grátis da company
+  O ciclo é alinhado com o ciclo de pontos EDVD (edvdPointStatus), para
+  que o dia 16 do planner coincida sempre com o dia em que os 4 EDVDs
+  grátis já estão disponíveis. Se não houver âncora definida, o ciclo
+  começa hoje no dia 1.
 */
-function buildWeekPlan(edv, happyMethod){
+function buildWeekPlan(edvdPts, happyMethod, daysCount){
+  daysCount = daysCount || PLANNER_HORIZON_DAYS;
   const out = [];
-  // Determine where in the 4-day cycle we are today
-  let cycleOffset = 0;
-  if(edv){
-    // edv.daysUntilNext = 0 means today is the "80 pts" (Happy Jump) day
-    // Map that to phase 3 (index 3 in cycle)
-    // Candy = 0, Natural1 = 1, Natural2 = 2, Happy = 3
-    const daysUntil = edv.daysUntilNext;
-    // If today is Happy day (daysUntil===0), cycleOffset = 3
-    // If tomorrow is Happy (daysUntil===1), today = Natural2 → cycleOffset = 2
-    // etc.
-    cycleOffset = (4 - (3 - (daysUntil === 0 ? 3 : (3 - daysUntil)))) % 4;
-    // Simpler: today's cyclePos = (3 - daysUntilNext + 4) % 4
-    cycleOffset = ((3 - (daysUntil % 4)) + 4) % 4;
-  }
+  // basePos: posição (0-15) do ciclo de 16 dias correspondente a "hoje"
+  const basePos = edvdPts ? (edvdPts.cycleDay - 1) : 0;
 
-  for(let i=0; i<7; i++){
+  for(let i=0; i<daysCount; i++){
     const d = new Date(); d.setDate(d.getDate()+i);
     const dayName = DAY_NAMES[d.getDay()];
     const dateStr = d.toLocaleDateString('pt-PT',{day:'2-digit',month:'short'});
     const isToday = i===0;
-    const cyclePos = (cycleOffset + i) % 4;
+    const cyclePos = (basePos + i) % PLANNER_CYCLE_DAYS; // 0..15
+    const cycleDay = cyclePos + 1; // 1..16
 
     let type, phase, label;
-    switch(cyclePos){
-      case 0:
-        type='candy'; phase='burst'; label='Candy Jump';
-        break;
-      case 1:
-        type='natural'; phase='normal'; label='Treino Natural';
-        break;
-      case 2:
-        type='natural'; phase='normal'; label='Treino Natural';
-        break;
-      case 3:
-        type='happy'; phase='burst'; label='Happy Jump';
-        break;
+    if(cycleDay <= 14){
+      type='choco'; phase='normal'; label='Choco Jump';
+    } else if(cycleDay === 15){
+      type='stack'; phase='burst'; label='Stack Xanax';
+    } else { // cycleDay === 16
+      type='happy'; phase='burst'; label='Happy Jump';
     }
-    out.push({day:dayName, dateStr, isToday, type, phase, label, method:happyMethod});
+    out.push({day:dayName, dateStr, isToday, type, phase, label, method:happyMethod, cycleDay});
   }
   return out;
 }
